@@ -1,8 +1,61 @@
 import bottleneck as bn
+import math
 import numpy as np
+import pandas as pd
 
 from conf import LEVELS
+from time import time
 
+
+def coverage(logits, y_true, k, high_idxs, low_idxs):
+
+    '''
+    :return: covered items in the first k recommended items across all users, high users and low users
+    '''
+
+    # Finding the indexes related to the top-k
+    idx_tops = bn.argpartition(-logits, k, axis=1)[:, :k]
+    high_idx_tops = idx_tops[high_idxs]
+    low_idx_tops = idx_tops[low_idxs]
+
+    # there are only duplicate indices in different rows
+    # because an item can only appear once in each user's
+    # recommendation list, so it does not make sense
+    # to find unique values along rows
+
+    all_unique = np.unique(idx_tops)
+    high_unique = np.unique(high_idx_tops)
+    low_unique = np.unique(low_idx_tops)
+
+    # same, but slower
+    # _all_unique = np.apply_along_axis(set, 0, idx_tops)
+    # all_unique = _all_unique[0].union(*_all_unique[1:])
+    # _high_unique = np.apply_along_axis(set, 0, high_idx_tops)
+    # high_unique = _high_unique[0].union(*_high_unique[1:])
+    # _low_unique = np.apply_along_axis(set, 0, low_idx_tops)
+    # low_unique = _low_unique[0].union(*_low_unique[1:])
+
+    # number of items in all
+    n_items = logits.shape[0]
+    # all_group_size = idx_tops.shape[0]
+    # high_group_size = high_idx_tops.shape[0]
+    # low_group_size = low_idx_tops.shape[0]
+
+    # note that the sizes of the groups and the k value are
+    # considered to make all coverage metrics comparable
+    cov_all = len(all_unique)/n_items  #(n_items * all_group_size * k)
+    cov_high = len(high_unique)/n_items  #(n_items * high_group_size  * k)
+    cov_low = len(low_unique)/n_items  #(n_items * low_group_size  * k)
+
+    assert cov_all >= cov_high and cov_all >= cov_low
+    assert cov_all <= 1 and cov_high <= 1 and cov_low <= 1
+
+
+    # return coverage
+    return cov_all, cov_high, cov_low
+
+def 
+    
 
 def NDCG_at_k_batch(logits, y_true, k=10):
     '''
@@ -191,6 +244,22 @@ def eval_proced(preds: np.ndarray, true: np.ndarray, high_idxs: np.ndarray, low_
 
             metrics_raw['high_{}_at_{}'.format(metric_name, lev)] = high_res
             metrics_raw['low_{}_at_{}'.format(metric_name, lev)] = low_res
+
+        # Coverage. This calculation is very expensive. See covered_songs function for optimisation oportunities
+        cov_all, cov_high, cov_low = coverage(preds, true, lev, high_idxs, low_idxs)
+
+        assert cov_all >= cov_high
+        assert cov_all >= cov_low
+        # assert math.isclose(cov_all, cov_high+cov_low)
+
+
+        # Since coverage is an holistic metric, the raw version
+        # is the same as the aggregated version, so we only save
+        # in one place
+        metrics['{}/cov_at_{}'.format(tag, lev)] = cov_all
+        metrics['{}/high_cov_at_{}'.format(tag, lev)] = cov_high
+        metrics['{}/low_cov_at_{}'.format(tag, lev)] = cov_low
+        
 
     # if ndcg@50 is not considered, then it considers the average of ndcgs
     if 50 not in LEVELS:
